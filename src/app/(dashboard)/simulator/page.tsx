@@ -16,17 +16,35 @@ export const metadata = {
 };
 
 export default function SimulatorPage() {
+  const hotlineNumber = process.env.TWILIO_HOTLINE_NUMBER ?? "";
+  const telephonyReady = process.env.TELEPHONY_PROVIDER === "twilio" && hotlineNumber.length > 0;
+
   return (
     <div>
       <PageHeader
         title="Phone Simulator"
-        description="Dial the hotline and navigate the automated voice menu with the keypad. The simulator runs the exact same IVR engine a real telephony provider will use."
+        description="Dial the hotline and navigate the automated voice menu with the keypad. Each prompt is spoken aloud so the experience matches a real phone call."
       />
 
       <div className="grid gap-8 lg:grid-cols-[auto_1fr]">
-        <PhoneSimulator />
+        <PhoneSimulator hotlineNumber={telephonyReady ? hotlineNumber : ""} />
 
         <div className="space-y-4">
+          {telephonyReady && (
+            <Card className="border-blue-200 bg-blue-50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-blue-900">Dial the real hotline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-2 font-mono text-lg font-bold text-blue-900">{hotlineNumber}</p>
+                <p className="text-xs text-blue-700">
+                  Place a call from your phone to this number. A Filipino voice will read the IVR
+                  menu — the same path as the simulator.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>IVR Main Menu</CardTitle>

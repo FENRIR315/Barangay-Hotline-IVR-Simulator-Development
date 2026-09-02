@@ -61,12 +61,12 @@ RESIDENT → PHONE CALL → TELEPHONY PROVIDER (future)
 2. ~~Database schema & seed data~~ ✅
 3. ~~Authentication & roles~~ ✅ (demo sessions)
 4. IVR engine wiring & call records
-5. ~~Phone simulator~~ ✅ (basic)
+5. ~~Phone simulator~~ ✅ (voice + keypad + live-call Twilio adapter)
 6. Call management: queue, availability, routing, escalation
 7. Voice recording simulation & storage
 8. Admin dashboard modules
 9. Security hardening: RLS, validation, audit logs
-10. Real telephony provider integration
+10. ~~Real telephony provider integration~~ ✅ (Twilio adapter + Filipino voice TTS)
 
 ---
 
@@ -78,6 +78,7 @@ RESIDENT → PHONE CALL → TELEPHONY PROVIDER (future)
 | Frontend     | React, TypeScript, Tailwind CSS v4                |
 | Database     | Prisma ORM + SQLite (local) → Supabase/PostgreSQL later |
 | Auth         | Demo session (local) → Supabase Auth later        |
+| Telephony    | Twilio (live phone) + browser speechSynthesis (simulator voice) |
 | Storage      | Local filesystem → Supabase Storage later         |
 | Icons        | lucide-react                                      |
 

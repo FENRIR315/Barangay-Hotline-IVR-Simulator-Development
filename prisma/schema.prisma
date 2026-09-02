@@ -127,6 +127,9 @@ model Call {
   durationSec   Int?      @map("duration_sec")
   recordingId   String?   @map("recording_id")
   source        String    @default("SIMULATOR") // SIMULATOR | TELEPHONY
+  providerCallId String?  @unique @map("provider_call_id") // Twilio CallSid
+  ivrState      String?   @map("ivr_state") // persisted IVR state name for telephony
+  ivrContext    String?   @map("ivr_context") // JSON-encoded IvrContext
   createdAt     DateTime  @default(now()) @map("created_at")
 
   assignedOfficial Official?  @relation("AssignedOfficial", fields: [assignedOfficialId], references: [id])
