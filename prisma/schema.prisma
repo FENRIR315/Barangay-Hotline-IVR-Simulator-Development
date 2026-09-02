@@ -1,0 +1,389 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// USERS
+// =====================================================================
+// Authenticated dashboard users. In the local demo mode these are seeded;
+// later this maps to Supabase Auth (auth.users).
+// =====================================================================
+
+enum Role {
+  CAPTAIN
+  SECRETARY
+  EMERGENCY_OFFICER
+  STAFF
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String? // null in demo mode; Supabase handles auth later
+  role         Role     @default(STAFF)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  official      Official?
+  announcements Announcement[]
+  auditLogs     AuditLog[] @relation("UserAction")
+
+  @@map("users")
+}
+
+// =====================================================================
+// OFFICIALS
+// =====================================================================
+// A telephony-routeable barangay official. Not every User is an official;
+// an Official carries the phone/extension used for routing and transfer.
+// =====================================================================
+
+enum OfficialStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+model Official {
+  id          String        @id @default(cuid())
+  userId      String?       @unique @map("user_id")
+  name        String
+  position    String
+  department  String?
+  phone       String? // masked externally; used for routing/transfer
+  extension   String?
+  status      OfficialStatus @default(AVAILABLE)
+  priority    Int           @default(0) // higher = routed first for emergencies
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  user       User?        @relation(fields: [userId], references: [id])
+  calls      Call[]       @relation("AssignedOfficial")
+  queueItems CallQueue[]
+  emergencyReports EmergencyReport[]
+  communityReports CommunityReport[]
+  escalations EscalationRule[] @relation("EscalationTarget")
+
+  @@index([status])
+  @@index([active])
+  @@unique([name, position])
+  @@map("officials")
+}
+
+// =====================================================================
+// CALLS
+// =====================================================================
+
+enum CallType {
+  EMERGENCY
+  SERVICE
+  COMPLAINT
+  ANNOUNCEMENT
+  OFFICIAL
+  INFORMATION
+}
+
+enum CallStatus {
+  RINGING
+  IN_IVR
+  QUEUED
+  CONNECTED
+  MISSED
+  COMPLETED
+  ESCALATED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model Call {
+  id            String    @id @default(cuid())
+  callerPhone   String?   @map("caller_phone")
+  callerName    String?   @map("caller_name")
+  callType      CallType  @default(INFORMATION) @map("call_type")
+  category      String? // e.g. MEDICAL, FIRE, DISASTER, NOISE, GARBAGE, etc.
+  priority      Priority  @default(NORMAL)
+  status        CallStatus @default(IN_IVR)
+  assignedOfficialId String? @map("assigned_official_id")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  answeredAt    DateTime? @map("answered_at")
+  endedAt       DateTime? @map("ended_at")
+  durationSec   Int?      @map("duration_sec")
+  recordingId   String?   @map("recording_id")
+  source        String    @default("SIMULATOR") // SIMULATOR | TELEPHONY
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  assignedOfficial Official?  @relation("AssignedOfficial", fields: [assignedOfficialId], references: [id])
+  events        CallEvent[]
+  queueItem     CallQueue?
+  emergencyReport EmergencyReport?
+  communityReport CommunityReport?
+  recording     VoiceRecording?
+
+  @@index([status])
+  @@index([callType])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("calls")
+}
+
+// =====================================================================
+// CALL EVENTS
+// =====================================================================
+// State-transition / lifecycle events for a call (IVR transitions, etc.)
+
+model CallEvent {
+  id       String   @id @default(cuid())
+  callId   String   @map("call_id")
+  event    String
+  detail   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  call     Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId])
+  @@map("call_events")
+}
+
+// =====================================================================
+// CALL QUEUE
+// =====================================================================
+
+enum QueueStatus {
+  WAITING
+  RINGING
+  CONNECTED
+  ABANDONED
+  COMPLETED
+}
+
+enum Department {
+  GENERAL
+  EMERGENCY
+  SERVICES
+  COMPLAINTS
+  ADMINISTRATION
+}
+
+model CallQueue {
+  id          String      @id @default(cuid())
+  callId      String      @unique @map("call_id")
+  callerPhone String?     @map("caller_phone")
+  department  Department  @default(GENERAL)
+  priority    Priority    @default(NORMAL)
+  status      QueueStatus @default(WAITING)
+  assignedOfficialId String? @map("assigned_official_id")
+  queuedAt    DateTime    @default(now()) @map("queued_at")
+  answeredAt  DateTime?   @map("answered_at")
+  durationSec Int?        @map("duration_sec")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  call           Call       @relation(fields: [callId], references: [id])
+  assignedOfficial Official? @relation(fields: [assignedOfficialId], references: [id])
+
+  @@index([status])
+  @@index([priority])
+  @@map("call_queue")
+}
+
+// =====================================================================
+// EMERGENCY REPORTS
+// =====================================================================
+
+enum EmergencyType {
+  MEDICAL
+  FIRE
+  DISASTER
+  OTHER
+}
+
+enum EmergencyStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model EmergencyReport {
+  id          String         @id @default(cuid())
+  callId      String         @unique @map("call_id")
+  type        EmergencyType
+  priority    Priority       @default(CRITICAL)
+  location    String?
+  description String?
+  status      EmergencyStatus @default(NEW)
+  assignedOfficialId String?  @map("assigned_official_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  call       Call      @relation(fields: [callId], references: [id])
+  assignedOfficial Official? @relation(fields: [assignedOfficialId], references: [id])
+
+  @@index([status])
+  @@index([type])
+  @@map("emergency_reports")
+}
+
+// =====================================================================
+// COMMUNITY REPORTS
+// =====================================================================
+
+enum ProblemType {
+  NOISE
+  GARBAGE
+  STREETLIGHT
+  ROAD_DAMAGE
+  FLOODING
+  DISTURBANCE
+  OTHER
+}
+
+enum ReportStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model CommunityReport {
+  id          String      @id @default(cuid())
+  callId      String      @unique @map("call_id")
+  reportNumber String     @unique @map("report_number") // e.g. BRGY-2026-000123
+  problemType ProblemType @map("problem_type")
+  location    String?
+  description String?
+  status      ReportStatus @default(NEW)
+  assignedOfficialId String? @map("assigned_official_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  call       Call      @relation(fields: [callId], references: [id])
+  assignedOfficial Official? @relation(fields: [assignedOfficialId], references: [id])
+
+  @@index([status])
+  @@index([problemType])
+  @@map("community_reports")
+}
+
+// =====================================================================
+// ANNOUNCEMENTS
+// =====================================================================
+
+enum AnnouncementPriority {
+  NORMAL
+  URGENT
+}
+
+model Announcement {
+  id          String                @id @default(cuid())
+  title       String
+  message     String
+  priority    AnnouncementPriority  @default(NORMAL)
+  startDate   DateTime?             @map("start_date")
+  endDate     DateTime?             @map("end_date")
+  active      Boolean               @default(true)
+  createdById String?               @map("created_by")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  createdBy  User? @relation(fields: [createdById], references: [id])
+
+  @@index([active])
+  @@index([startDate, endDate])
+  @@map("announcements")
+}
+
+// =====================================================================
+// VOICE RECORDINGS
+// =====================================================================
+
+enum RecordingStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model VoiceRecording {
+  id        String          @id @default(cuid())
+  callId    String          @unique @map("call_id")
+  filePath  String          @map("file_path") // local path; Supabase storage later
+  durationSec Int?          @map("duration_sec")
+  category  String?
+  status    RecordingStatus @default(ACTIVE)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  call      Call            @relation(fields: [callId], references: [id])
+
+  @@index([status])
+  @@map("voice_recordings")
+}
+
+// =====================================================================
+// ESCALATION RULES
+// =====================================================================
+// Configurable emergency escalation chain + timeouts (spec §20).
+
+model EscalationRule {
+  id        String   @id @default(cuid())
+  name      String
+  stepOrder Int      @map("step_order")
+  targetOfficialId String @map("target_official_id")
+  timeoutSec Int     @map("timeout_sec")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  targetOfficial Official @relation("EscalationTarget", fields: [targetOfficialId], references: [id])
+
+  @@index([name, stepOrder])
+  @@unique([name, stepOrder])
+  @@map("escalation_rules")
+}
+
+// =====================================================================
+// SYSTEM SETTINGS
+// =====================================================================
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+// =====================================================================
+// AUDIT LOGS
+// =====================================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  action    String
+  entityType String? @map("entity_type")
+  entityId  String?  @map("entity_id")
+  detail    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation("UserAction", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
